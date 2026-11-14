@@ -896,6 +896,7 @@
     parseReceiptText: parseReceiptText,
     extractJson: extractJson,
     GEMINI_MODELS: GEMINI_MODELS,
+    cleanApiKey: cleanApiKey,
     geminiModelIds: geminiModelIds,
     normalizeModel: normalizeModel,
     geminiModels: geminiModels,
