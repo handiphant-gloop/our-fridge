@@ -83,7 +83,7 @@
     var text = String(str === null || str === undefined ? '' : str);
     var bytes;
     if (global.TextEncoder) {
-      bytes = global.TextEncoder.prototype.encode.call(new global.TextEncoder(), text);
+      bytes = new global.TextEncoder().encode(text);
     } else {
       var esc = encodeURIComponent(text).replace(/%([0-9A-F]{2})/g, function (m, h) {
         return String.fromCharCode(parseInt(h, 16));
@@ -105,7 +105,7 @@
     var bytes = [];
     for (var i = 0; i < bin.length; i++) { bytes.push(bin.charCodeAt(i)); }
     if (global.TextDecoder) {
-      return global.TextDecoder.prototype.decode.call(new global.TextDecoder('utf-8'), new Uint8Array(bytes));
+      return new global.TextDecoder('utf-8').decode(new Uint8Array(bytes));
     }
     var enc = '';
     for (var j = 0; j < bytes.length; j++) {
