@@ -853,16 +853,28 @@
     var r = state.receipt;
     var html = sheetHead('영수증으로 추가') +
       segHTML('receipt') +
-      '<input type="file" id="receiptFile" accept="image/*" capture="environment" class="hidden">' +
+      '<input type="file" id="receiptFileCamera" accept="image/*" capture="environment" class="hidden">' +
+      '<input type="file" id="receiptFileGallery" accept="image/*" class="hidden">' +
       '<div id="receiptPhotoArea">' +
         (r.image
           ? '<img id="receiptPreview" src="' + r.image + '" alt="영수증 사진">' +
-            '<div class="receipt-actions"><button type="button" id="btnPickPhoto" class="btn small ghost">다른 사진 선택</button></div>'
-          : '<button type="button" id="btnPickPhoto" class="dropzone">' +
-              '<span class="dz-emoji">📷</span>' +
-              '<span>영수증 사진 찍기 / 앨범에서 선택</span>' +
-              '<span style="font-size:11.5px">품목과 금액이 잘 보이게 찍어 주세요</span>' +
-            '</button>') +
+            '<div class="receipt-actions">' +
+              '<button type="button" id="btnShotPhoto" class="btn small ghost">📷 다시 찍기</button>' +
+              '<button type="button" id="btnPickPhoto" class="btn small ghost">🖼️ 다른 사진 선택</button>' +
+            '</div>'
+          : '<div class="receipt-pick">' +
+              '<button type="button" id="btnShotPhoto" class="dropzone">' +
+                '<span class="dz-emoji">📷</span>' +
+                '<span>카메라로 찍기</span>' +
+                '<span class="dz-hint">바로 촬영</span>' +
+              '</button>' +
+              '<button type="button" id="btnPickPhoto" class="dropzone">' +
+                '<span class="dz-emoji">🖼️</span>' +
+                '<span>갤러리·파일 선택</span>' +
+                '<span class="dz-hint">저장된 사진 올리기</span>' +
+              '</button>' +
+            '</div>' +
+            '<p class="receipt-hint">품목과 금액이 잘 보이게 찍어 주세요</p>') +
       '</div>' +
       '<div class="receipt-actions">' +
         '<button type="button" id="btnGemini" class="btn primary">✨ AI로 인식</button>' +
@@ -881,15 +893,19 @@
     var sh = openSheet(html);
     bindSeg(sh);
 
-    var fileInput = sh.querySelector('#receiptFile');
+    var camInput = sh.querySelector('#receiptFileCamera');
+    var galInput = sh.querySelector('#receiptFileGallery');
+    var shot = sh.querySelector('#btnShotPhoto');
     var pick = sh.querySelector('#btnPickPhoto');
-    if (pick) {
-      pick.addEventListener('click', function () { fileInput.click(); });
-    }
+    // 카메라 버튼 → capture 가 걸린 input, 갤러리 버튼 → capture 없는 input
+    if (shot) { shot.addEventListener('click', function () { camInput.click(); }); }
+    if (pick) { pick.addEventListener('click', function () { galInput.click(); }); }
 
-    fileInput.addEventListener('change', function () {
-      var file = fileInput.files && fileInput.files[0];
+    function handleReceiptFile(input) {
+      var file = input.files && input.files[0];
       if (!file) { return; }
+      // 같은 사진을 다시 골라도 change 가 걸리도록 즉시 비운다 (File 객체는 이미 붙잡아 둠)
+      input.value = '';
       setReceiptStatus('사진 준비 중…', '');
       INT.fileToDataUrl(file).then(function (url) {
         return INT.shrinkImage(url, 1500, 0.85);
@@ -901,7 +917,10 @@
       }).catch(function (err) {
         setReceiptStatus(err && err.message ? err.message : '사진을 읽지 못했어요.', 'err');
       });
-    });
+    }
+
+    camInput.addEventListener('change', function () { handleReceiptFile(camInput); });
+    galInput.addEventListener('change', function () { handleReceiptFile(galInput); });
 
     sh.querySelector('#btnGemini').addEventListener('click', function () {
       if (!state.receipt.image) {
