@@ -1461,6 +1461,7 @@
       } finally {
         state.cloud.busy = false;
         updateSyncUI();
+        renderDataStat();
       }
     },
     disconnect: function () {

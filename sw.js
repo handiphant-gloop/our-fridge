@@ -1,12 +1,12 @@
 /* 우리집 냉장고 — service worker
    앱 껍데기만 캐시한다. Supabase·Gemini·OCR CDN 요청은 캐시하지 않는다. */
-var CACHE_NAME = 'fridge-app-v1.0.4';
+var CACHE_NAME = 'fridge-app-v1.0.5';
 var ASSETS = [
   './',
   './index.html',
-  './styles.css?v=1.0.4',
-  './app.js?v=1.0.4',
-  './integrations.js?v=1.0.4',
+  './styles.css?v=1.0.5',
+  './app.js?v=1.0.5',
+  './integrations.js?v=1.0.5',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
