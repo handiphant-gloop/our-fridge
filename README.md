@@ -83,7 +83,7 @@ GitHub Pages에 올리면 `https://<계정>.github.io/<저장소>/` 로 가족�
 
 ## 배포 메모 (GitHub Pages)
 
-- 공개 주소: <https://handiphant-gloop.github.io/out-fridge/>
+- 공개 주소: <https://handiphant-gloop.github.io/our-fridge/> (저장소: `handiphant-gloop/our-fridge`)
 - 이 저장소는 `gh-pages` 브랜치를 Pages 소스로 사용합니다. 앱을 수정하면 두 브랜치에 함께 올려 주세요.
 
   ```bash
@@ -91,5 +91,5 @@ GitHub Pages에 올리면 `https://<계정>.github.io/<저장소>/` 로 가족�
   git push origin main:gh-pages
   ```
 
-- 저장소 이름을 `our-fridge`로 바꾸면 Pages 주소도 `https://handiphant-gloop.github.io/our-fridge/` 로 함께 바뀝니다(이전 주소는 리디렉션).
+- 2026-11-14에 저장소 이름을 `out-fridge` → `our-fridge`로 바꿨습니다. 이전 주소(`https://handiphant-gloop.github.io/out-fridge/`)는 열리지 않으니, 홈 화면에 추가해 둔 기기는 새 주소로 다시 추가해야 합니다.
 - 서비스 워커 캐시 때문에 수정이 바로 안 보이면 새로고침을 두 번 하거나, 브라우저 설정에서 사이트 데이터를 지우면 됩니다. (`sw.js`의 `CACHE_NAME`을 올려도 됩니다.)
