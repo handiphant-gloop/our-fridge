@@ -13,7 +13,8 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
-<link rel="stylesheet" href="styles.css">
+<!-- 배포 시 아래 ?v= 값과 sw.js의 CACHE_NAME을 함께 올린다 (설치된 기기가 첫 로드에 새 파일을 받게) -->
+<link rel="stylesheet" href="styles.css?v=1.0.2">
 </head>
 <body>
 
@@ -223,7 +224,7 @@
 
 <noscript><div class="noscript">이 앱을 쓰려면 브라우저에서 JavaScript를 켜 주세요.</div></noscript>
 
-<script src="integrations.js"></script>
-<script src="app.js"></script>
+<script src="integrations.js?v=1.0.2"></script>
+<script src="app.js?v=1.0.2"></script>
 </body>
 </html>
