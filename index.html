@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <!-- 배포 시 아래 ?v= 값과 sw.js의 CACHE_NAME을 함께 올린다 (설치된 기기가 첫 로드에 새 파일을 받게) -->
-<link rel="stylesheet" href="styles.css?v=1.0.2">
+<link rel="stylesheet" href="styles.css?v=1.0.3">
 </head>
 <body>
 
@@ -140,6 +140,17 @@
       </div>
       <p id="cloudStatus" class="status-line">로컬 모드로 동작 중이에요. 이 폰에만 저장됩니다.</p>
 
+      <div class="setup-box">
+        <button type="button" id="btnSetupLink" class="btn wide ghost">🔗 이 설정 그대로 공유 링크 만들기</button>
+        <p class="hint">가족 폰에서 이 링크를 열면 위 값(Supabase URL·키, 공유 코드, Gemini 키·모델)이 자동으로 들어가고 바로 연결을 시도해요. 링크 안에 키가 들어 있으니 가족에게만 보내 주세요.</p>
+        <div id="setupLinkBox" class="hidden">
+          <input id="setupLinkInput" type="text" readonly aria-label="가족 설정 공유 링크">
+          <div class="btn-row">
+            <button type="button" id="btnCopySetupAgain" class="btn small primary">다시 복사</button>
+          </div>
+        </div>
+      </div>
+
       <details class="sql-details">
         <summary>Supabase 테이블 만들기 SQL (복사 → SQL Editor에 붙여넣기)</summary>
         <pre id="sqlBlock" class="sql"></pre>
@@ -157,13 +168,24 @@
       </div>
       <label class="field">
         <span>Gemini API 키 (무료 티어)</span>
-        <input id="geminiKey" type="password" placeholder="AIza..." autocomplete="off" spellcheck="false">
+        <input id="geminiKey" type="password" placeholder="AIza… 또는 AQ.…" autocomplete="off" spellcheck="false">
       </label>
-      <div class="btn-row">
+      <label class="field">
+        <span>모델</span>
+        <select id="geminiModel" aria-label="Gemini 모델 선택">
+          <option value="gemini-2.5-flash">gemini-2.5-flash (기본 · 빠름/무료 추천)</option>
+          <option value="gemini-2.5-pro">gemini-2.5-pro (정확도 우선 · Pro)</option>
+          <option value="gemini-2.0-flash">gemini-2.0-flash (예비)</option>
+        </select>
+      </label>
+      <div class="btn-row wrap">
         <button type="button" id="btnSaveKey" class="btn primary">키 저장</button>
+        <button type="button" id="btnGeminiTest" class="btn ghost">Gemini 연결 테스트</button>
         <button type="button" id="btnClearKey" class="btn ghost">키 삭제</button>
       </div>
-      <p class="hint">키 발급: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> → Create API key. 키는 이 기기 브라우저(localStorage)에만 저장되고, 영수증 인식 때 Google로만 전송됩니다.</p>
+      <div id="geminiTestResult" class="test-result hidden"></div>
+      <p class="hint">Google AI Pro(Gemini) 월정액 구독과는 별개이며, Google AI Studio(<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>)에서 발급한 <code>AIza...</code> 또는 <code>AQ....</code> 로 시작하는 키를 사용합니다.</p>
+      <p class="hint">키는 이 기기 브라우저(localStorage)에만 저장되고, 영수증 인식·연결 테스트 때 Google로만 전송됩니다. <code>AQ.</code> 키는 AI Studio로 먼저 시도하고, 막히면 Vertex AI Express 엔드포인트로 자동 재시도합니다.</p>
       <p class="hint">키가 없어도 글자 인식(OCR, Tesseract.js)과 텍스트 붙여넣기로 등록할 수 있어요. OCR은 인터넷 연결이 필요하고 첫 실행이 느립니다.</p>
     </div>
 
@@ -193,7 +215,7 @@
       </ul>
       <h3 class="sub-h">공유 코드 주의</h3>
       <p class="hint">같은 공유 코드를 쓰는 사람은 누구나 이 냉장고를 보고 고칠 수 있어요. 집 안에서만 쓰는 간단한 앱이라 비밀번호 같은 민감한 정보는 넣지 마세요.</p>
-      <p class="version">우리집 냉장고 v1.0 · 화면 아래 <b>＋</b> 버튼으로 식재료를 추가하세요.</p>
+      <p class="version">우리집 냉장고 v1.0.3 · 화면 아래 <b>＋</b> 버튼으로 식재료를 추가하세요.</p>
     </div>
 
   </section>
@@ -224,7 +246,7 @@
 
 <noscript><div class="noscript">이 앱을 쓰려면 브라우저에서 JavaScript를 켜 주세요.</div></noscript>
 
-<script src="integrations.js?v=1.0.2"></script>
-<script src="app.js?v=1.0.2"></script>
+<script src="integrations.js?v=1.0.3"></script>
+<script src="app.js?v=1.0.3"></script>
 </body>
 </html>

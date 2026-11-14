@@ -26,7 +26,7 @@
     quickFilter: 'all',
     sort: 'expiry',
     search: '',
-    settings: { geminiKey: '', sbUrl: '', sbKey: '', sbCode: '' },
+    settings: { geminiKey: '', geminiModel: 'gemini-2.5-flash', sbUrl: '', sbKey: '', sbCode: '' },
     cloud: { enabled: false, status: 'local', message: '', lastSync: 0, busy: false },
     receipt: { image: null, rows: [], text: '', status: null, log: '' },
     sheetMode: 'direct',
@@ -46,10 +46,11 @@
     var s = {};
     try { s = JSON.parse(localStorage.getItem(LS_SET) || '{}') || {}; } catch (e) { s = {}; }
     state.settings = {
-      geminiKey: s.geminiKey || '',
-      sbUrl: s.sbUrl || '',
-      sbKey: s.sbKey || '',
-      sbCode: s.sbCode || ''
+      geminiKey: INT.cleanApiKey(s.geminiKey),
+      geminiModel: INT.normalizeModel(s.geminiModel),
+      sbUrl: FU.trim(s.sbUrl),
+      sbKey: FU.trim(s.sbKey),
+      sbCode: FU.trim(s.sbCode)
     };
     state.cloud.lastSync = Number(localStorage.getItem(LS_SYNC) || 0) || 0;
     if (state.settings.sbUrl && state.settings.sbKey && state.settings.sbCode) {
@@ -931,8 +932,8 @@
         setReceiptStatus('Gemini API 키가 없어요. 설정 탭에서 키를 저장하거나, 아래 ‘글자만 추출(OCR)’을 눌러 주세요.', 'err');
         return;
       }
-      setReceiptStatus('✨ Gemini가 영수증을 읽고 있어요… (10~20초)', '');
-      INT.geminiExtract(state.receipt.image, state.settings.geminiKey).then(function (rows) {
+      setReceiptStatus('✨ Gemini(' + modelShort(state.settings.geminiModel) + ')가 영수증을 읽고 있어요… (10~20초)', '');
+      INT.geminiExtract(state.receipt.image, state.settings.geminiKey, state.settings.geminiModel).then(function (rows) {
         state.receipt.rows = rows;
         renderReceiptSheet();
         setReceiptStatus(rows.length + '개 품목을 찾았어요. 확인하고 등록하세요.', 'ok');
@@ -1608,15 +1609,177 @@
     if ($('sbKey')) { $('sbKey').value = state.settings.sbKey || ''; }
     if ($('sbCode')) { $('sbCode').value = state.settings.sbCode || ''; }
     if ($('geminiKey')) { $('geminiKey').value = state.settings.geminiKey || ''; }
+    if ($('geminiModel')) { $('geminiModel').value = state.settings.geminiModel; }
     if ($('sqlBlock')) { $('sqlBlock').textContent = INT.SCHEMA_SQL; }
     var gb = $('geminiBadge');
     if (gb) {
-      gb.textContent = state.settings.geminiKey ? '키 저장됨' : '키 없음';
+      gb.textContent = state.settings.geminiKey ? '키 저장됨 · ' + modelShort(state.settings.geminiModel) : '키 없음';
       gb.className = 'pill ' + (state.settings.geminiKey ? 'on' : 'muted');
     }
     renderSpaceList();
     renderDataStat();
     updateSyncUI();
+  }
+
+  /* ============================================================
+     Gemini 모델 · 연결 테스트
+     ============================================================ */
+  function modelShort(id) { return String(id || '').replace(/^gemini-/, ''); }
+
+  function setGeminiTest(text, type) {
+    var el = $('geminiTestResult');
+    if (!el) { return; }
+    if (!text) {
+      el.textContent = '';
+      el.className = 'test-result hidden';
+      return;
+    }
+    el.textContent = text;
+    el.className = 'test-result ' + (type || '');
+  }
+
+  /* 화면에 입력된 값을 그대로 설정에 반영 (공유 링크·테스트가 같은 값을 쓰도록) */
+  function syncSettingsForm() {
+    if ($('geminiKey')) { state.settings.geminiKey = INT.cleanApiKey($('geminiKey').value); }
+    if ($('geminiModel')) { state.settings.geminiModel = INT.normalizeModel($('geminiModel').value); }
+    if ($('sbUrl')) { state.settings.sbUrl = FU.trim($('sbUrl').value).replace(/\/+$/, ''); }
+    if ($('sbKey')) { state.settings.sbKey = FU.trim($('sbKey').value); }
+    if ($('sbCode')) { state.settings.sbCode = FU.trim($('sbCode').value); }
+    saveSettings();
+  }
+
+  function runGeminiTest() {
+    syncSettingsForm();
+    var key = state.settings.geminiKey;
+    var model = state.settings.geminiModel;
+    var btn = $('btnGeminiTest');
+    if ($('geminiKey')) { $('geminiKey').value = key; }
+    if (!key) {
+      setGeminiTest('⚠️ Gemini API 키를 먼저 입력해 주세요.\nAI Studio(aistudio.google.com/apikey)에서 발급한 키를 붙여넣고 ‘키 저장’을 누르세요.', 'warn');
+      return;
+    }
+    var aq = INT.isAqKey(key);
+    setGeminiTest('⏳ ' + model + ' 연결을 확인하는 중…' + (aq ? '\n(AQ. 키는 AI Studio → Vertex AI Express 순서로 확인해요)' : ''), '');
+    if (btn) { btn.disabled = true; }
+    INT.geminiTest(key, model).then(function (r) {
+      if (r.ok) {
+        setGeminiTest('✅ 연결 성공 (' + r.model + (r.apiLabel ? ' · ' + r.apiLabel : '') +
+          (r.auth === 'header' ? ', x-goog-api-key' : '') + ')', 'ok');
+      } else {
+        var lines = ['❌ 연결 실패 (' + r.model + ')' +
+          (r.status ? ' · HTTP ' + r.status : '') +
+          (r.reason ? ' · ' + r.reason : '')];
+        if (r.message) { lines.push(r.message); }
+        if (r.hint) { lines.push('→ ' + r.hint); }
+        if (r.attempts && r.attempts.length > 1) {
+          lines.push('시도 기록: ' + r.attempts.map(function (a) {
+            return (a.api === 'vertex' ? 'Vertex' : 'AI Studio') + '/' +
+              (a.auth === 'header' ? '헤더' : '쿼리') + ' ' +
+              (a.status ? 'HTTP ' + a.status : '네트워크 오류');
+          }).join(' · '));
+        }
+        setGeminiTest(lines.join('\n'), 'err');
+      }
+    }).catch(function (err) {
+      setGeminiTest('❌ 연결 테스트 중 오류: ' + (err && err.message ? err.message : '알 수 없는 오류'), 'err');
+    }).then(function () {
+      if (btn) { btn.disabled = false; }
+    });
+  }
+
+  /* ============================================================
+     가족 공유 설정 링크 (#setup=...)
+     ============================================================ */
+  function setupPayload() {
+    return {
+      v: 1,
+      app: 'fridge-app',
+      supabaseUrl: state.settings.sbUrl || '',
+      supabaseAnonKey: state.settings.sbKey || '',
+      familyCode: state.settings.sbCode || '',
+      geminiKey: state.settings.geminiKey || '',
+      geminiModel: state.settings.geminiModel || 'gemini-2.5-flash',
+      madeAt: FU.nowIso()
+    };
+  }
+
+  function buildSetupLink() {
+    return location.origin + location.pathname + '#setup=' +
+      FU.b64urlEncode(JSON.stringify(setupPayload()));
+  }
+
+  function showSetupLink(link, focus) {
+    var box = $('setupLinkBox');
+    var input = $('setupLinkInput');
+    if (!box || !input) { return; }
+    box.classList.remove('hidden');
+    input.value = link;
+    if (focus) {
+      try { input.focus(); input.select(); } catch (e) { /* noop */ }
+    }
+  }
+
+  function copySetupLink() {
+    syncSettingsForm();
+    var link = buildSetupLink();
+    FU.copyText(link).then(function (ok) {
+      if (!ok) { throw new Error('copy failed'); }
+      showSetupLink(link, false);
+      toast('🔗 가족 설정 링크를 복사했어요. 가족 폰에서 열면 자동으로 적용돼요.', 3600);
+    }).catch(function () {
+      showSetupLink(link, true);
+      toast('자동 복사가 안 됐어요. 아래 칸의 링크를 길게 눌러 복사해 주세요.', 3800);
+    });
+  }
+
+  function parseSetupHash() {
+    var h = String(location.hash || '');
+    if (h.indexOf('#setup=') !== 0) { return null; }
+    var token = h.slice(7);
+    if (!token) { return null; }
+    try { token = decodeURIComponent(token); } catch (e) { /* 원문 그대로 */ }
+    try {
+      var obj = JSON.parse(FU.b64urlDecode(token));
+      return (obj && typeof obj === 'object') ? obj : null;
+    } catch (e2) { return null; }
+  }
+
+  function clearSetupHash() {
+    try { history.replaceState(null, '', location.pathname + (location.search || '')); } catch (e) { /* noop */ }
+  }
+
+  function applySetupFromHash() {
+    if (String(location.hash || '').indexOf('#setup=') !== 0) { return false; }
+    var payload = parseSetupHash();
+    clearSetupHash();  // 주소창에 키가 남아 보이지 않게 바로 지운다
+    if (!payload) {
+      toast('설정 링크를 읽지 못했어요. 링크가 잘리지 않았는지 확인해 주세요.', 3600);
+      return false;
+    }
+
+    state.settings.sbUrl = FU.trim(payload.supabaseUrl || payload.sbUrl || '').replace(/\/+$/, '');
+    state.settings.sbKey = FU.trim(payload.supabaseAnonKey || payload.sbKey || '');
+    state.settings.sbCode = FU.trim(payload.familyCode || payload.sbCode || '');
+    state.settings.geminiKey = INT.cleanApiKey(payload.geminiKey || '');
+    state.settings.geminiModel = INT.normalizeModel(payload.geminiModel || '');
+    saveSettings();
+
+    state.cloud.enabled = !!(state.settings.sbUrl && state.settings.sbKey && state.settings.sbCode);
+    state.cloud.status = state.cloud.enabled ? 'syncing' : 'local';
+    state.cloud.message = '';
+
+    renderAll();
+    renderSettings();
+    switchView('settings');
+    toast('✅ 가족 공유·API 설정이 자동으로 적용됐어요', 3600);
+    setGeminiTest('✅ 가족 공유·API 설정이 이 기기에 적용됐어요. ' +
+      (state.cloud.enabled ? '가족 냉장고와 맞추는 중…' : '가족 공유 값이 없어 이 폰에만 저장해요.'), 'ok');
+
+    if (state.cloud.enabled) {
+      cloud.client = INT.makeClient(state.settings.sbUrl, state.settings.sbKey);
+      setTimeout(function () { cloud.connect(); }, 200);
+    }
+    return true;
   }
 
   /* ============================================================
@@ -1918,18 +2081,44 @@
     });
 
     $('btnSaveKey').addEventListener('click', function () {
-      var v = FU.trim($('geminiKey').value);
+      var raw = $('geminiKey') ? $('geminiKey').value : '';
+      var v = INT.cleanApiKey(raw);
       state.settings.geminiKey = v;
+      if ($('geminiModel')) { state.settings.geminiModel = INT.normalizeModel($('geminiModel').value); }
       saveSettings();
+      if ($('geminiKey')) { $('geminiKey').value = v; }
       renderSettings();
-      toast(v ? 'Gemini 키를 저장했어요. 영수증 인식에 쓸 수 있어요.' : '키를 비웠어요.');
+      setGeminiTest('', '');
+      if (!v) { toast('키를 비웠어요.'); }
+      else if (String(raw) !== v) { toast('줄바꿈·공백(보이지 않는 문자)을 빼고 키를 저장했어요.'); }
+      else { toast('Gemini 키를 저장했어요. ‘Gemini 연결 테스트’로 확인해 보세요.'); }
     });
     $('btnClearKey').addEventListener('click', function () {
       state.settings.geminiKey = '';
       saveSettings();
       renderSettings();
+      setGeminiTest('', '');
       toast('Gemini 키를 지웠어요.');
     });
+
+    if ($('geminiModel')) {
+      $('geminiModel').addEventListener('change', function () {
+        state.settings.geminiModel = INT.normalizeModel($('geminiModel').value);
+        saveSettings();
+        renderSettings();
+        setGeminiTest('모델을 ' + state.settings.geminiModel + ' 로 바꿨어요. ‘Gemini 연결 테스트’로 확인해 보세요.', '');
+      });
+    }
+
+    if ($('btnGeminiTest')) { $('btnGeminiTest').addEventListener('click', runGeminiTest); }
+    if ($('btnSetupLink')) { $('btnSetupLink').addEventListener('click', copySetupLink); }
+    if ($('btnCopySetupAgain')) {
+      $('btnCopySetupAgain').addEventListener('click', function () {
+        var input = $('setupLinkInput');
+        var link = input && input.value ? input.value : buildSetupLink();
+        showSetupLink(link, true);
+      });
+    }
 
     $('btnAddSpace').addEventListener('click', function () { openSpaceSheet(null); });
 
@@ -2012,13 +2201,23 @@
     renderAll();
     renderSettings();
     handleUrl();
+    var applied = applySetupFromHash();
     registerSW();
 
     if (state.cloud.enabled) {
       cloud.client = INT.makeClient(state.settings.sbUrl, state.settings.sbKey);
-      setTimeout(function () { cloud.sync(false); }, 300);
-      cloud.startPolling();
+      if (applied) {
+        // applySetupFromHash 가 connect() 를 예약했다
+        cloud.startPolling();
+      } else {
+        setTimeout(function () { cloud.sync(false); }, 300);
+        cloud.startPolling();
+      }
     }
+
+    global.addEventListener('hashchange', function () {
+      if (String(location.hash || '').indexOf('#setup=') === 0) { applySetupFromHash(); }
+    });
   }
 
   if (document.readyState === 'loading') {

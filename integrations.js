@@ -69,6 +69,51 @@
 
   function trimStr(s) { return String(s === null || s === undefined ? '' : s).trim(); }
 
+  /* API 키 정리: 줄바꿈·탭·보이지 않는 문자(BOM, zero-width, NBSP)와 감싼 따옴표를 지운다 */
+  function cleanApiKey(k) {
+    return String(k === null || k === undefined ? '' : k)
+      .replace(/[\u200b-\u200f\u2028\u2029\ufeff\u00a0]/g, '')
+      .replace(/[\s\r\n\t]+/g, '')
+      .replace(/^["'`]+|[\"'`]+$/g, '')
+      .trim();
+  }
+
+  /* UTF-8 → Base64URL (설정 공유 링크용, 패딩 없음) */
+  function b64urlEncode(str) {
+    var text = String(str === null || str === undefined ? '' : str);
+    var bytes;
+    if (global.TextEncoder) {
+      bytes = global.TextEncoder.prototype.encode.call(new global.TextEncoder(), text);
+    } else {
+      var esc = encodeURIComponent(text).replace(/%([0-9A-F]{2})/g, function (m, h) {
+        return String.fromCharCode(parseInt(h, 16));
+      });
+      bytes = [];
+      for (var i = 0; i < esc.length; i++) { bytes.push(esc.charCodeAt(i)); }
+    }
+    var bin = '';
+    for (var j = 0; j < bytes.length; j++) { bin += String.fromCharCode(bytes[j]); }
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  /* Base64URL → UTF-8 */
+  function b64urlDecode(str) {
+    var s = String(str === null || str === undefined ? '' : str).trim()
+      .replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) { s += '='; }
+    var bin = atob(s);
+    var bytes = [];
+    for (var i = 0; i < bin.length; i++) { bytes.push(bin.charCodeAt(i)); }
+    if (global.TextDecoder) {
+      return global.TextDecoder.prototype.decode.call(new global.TextDecoder('utf-8'), new Uint8Array(bytes));
+    }
+    var enc = '';
+    for (var j = 0; j < bytes.length; j++) {
+      enc += '%' + ('00' + bytes[j].toString(16)).slice(-2);
+    }
+    return decodeURIComponent(enc);
+  }
+
   function debounce(fn, ms) {
     var t = null;
     return function () {
@@ -312,23 +357,215 @@
     '출력은 {"items":[{"name":"우유","quantity":1,"unit":"개","storage":"냉장실","shelf_life_days":7}]} 형태의 JSON만. 설명 문장은 쓰지 마라.'
   ].join('\n');
 
-  function geminiModels() { return ['gemini-2.5-flash', 'gemini-2.0-flash']; }
+  var GEMINI_MODELS = [
+    { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash (기본 · 빠름/무료 추천)' },
+    { id: 'gemini-2.5-pro', label: 'gemini-2.5-pro (정확도 우선 · Pro)' },
+    { id: 'gemini-2.0-flash', label: 'gemini-2.0-flash (예비)' }
+  ];
+
+  function geminiModelIds() {
+    return GEMINI_MODELS.map(function (m) { return m.id; });
+  }
+
+  function normalizeModel(m) {
+    var v = trimStr(m).replace(/^models\//i, '');
+    return geminiModelIds().indexOf(v) >= 0 ? v : 'gemini-2.5-flash';
+  }
+
+  /* 고른 모델을 먼저, 나머지는 예비 순서로 */
+  function geminiModels(preferred) {
+    var first = normalizeModel(preferred);
+    var out = [first];
+    geminiModelIds().forEach(function (id) {
+      if (id !== first) { out.push(id); }
+    });
+    return out;
+  }
+
+  /* Gemini 오류 응답에서 HTTP 코드·이유(reason)·원문 메시지를 뽑는다 */
+  function apiErrorInfo(status, body) {
+    var b = String(body || '');
+    var info = { status: status, reason: '', message: '' };
+    try {
+      var j = JSON.parse(b);
+      if (j && j.error) {
+        info.message = trimStr(j.error.message);
+        info.reason = trimStr(j.error.status);
+        var details = j.error.details || [];
+        for (var i = 0; i < details.length; i++) {
+          if (details[i] && details[i].reason) { info.reason = trimStr(details[i].reason); }
+        }
+      }
+    } catch (e) { /* JSON 아님 */ }
+    if (!info.message) { info.message = b.slice(0, 300); }
+    return info;
+  }
+
+  function explainApiError(info) {
+    var hay = String(info.reason || '') + ' ' + String(info.message || '');
+    if (/API_KEY_INVALID|API key not valid|invalid api key|API key expired/i.test(hay)) {
+      return '키 형식·값이 올바르지 않아요. AIza… 또는 AQ…. 로 시작하는 키인지, 복사가 잘렸지 않은지 확인해 주세요.';
+    }
+    if (/BILLING|billing|payment/i.test(hay)) {
+      return '이 프로젝트에 유료 결제(빌링) 설정이 필요해요. Google Cloud 결제 계정을 연결해야 이 모델을 쓸 수 있어요.';
+    }
+    if (/SERVICE_DISABLED|has not been used|is disabled/i.test(hay)) {
+      return '이 프로젝트에서 Generative Language API가 사용 중지 상태예요. Google Cloud 콘솔에서 API를 사용 설정해 주세요.';
+    }
+    if (/PERMISSION_DENIED|forbidden/i.test(hay)) {
+      return '이 키로는 요청 권한이 없어요. 키 제한(HTTP 리퍼러·IP)이나 프로젝트 상태를 확인해 주세요.';
+    }
+    if (/RESOURCE_EXHAUSTED|quota/i.test(hay)) {
+      return '무료 사용량(할당량)을 넘었어요. 잠시 뒤 다시 시도하거나 다른 모델을 골라 주세요.';
+    }
+    if (info.status === 404 || /NOT_FOUND|is not found|not supported/i.test(hay)) {
+      return '이 모델을 쓸 수 없어요(모델명 미지원·이용 불가). 다른 모델을 골라 다시 시도해 주세요.';
+    }
+    if (info.status >= 500) {
+      return 'Google 서버가 잠시 불안정해요. 조금 뒤 다시 시도해 주세요.';
+    }
+    return '';
+  }
 
   function friendlyHttpError(status, body) {
     var b = String(body || '');
+    var info = apiErrorInfo(status, b);
+    var tail = info.message ? ' · ' + info.message.slice(0, 200) : '';
     if (status === 400 && /API key not valid|API_KEY_INVALID/i.test(b)) {
-      return 'Gemini API 키가 올바르지 않아요. 설정에서 키를 다시 확인해 주세요.';
+      return 'Gemini API 키가 올바르지 않아요 (HTTP 400). 설정에서 키를 다시 확인해 주세요.' + tail;
     }
-    if (status === 403) { return 'Gemini API 사용 권한이 없어요. Google AI Studio에서 키 상태를 확인해 주세요.'; }
-    if (status === 429) { return 'Gemini 무료 사용량을 잠시 넘었어요. 잠시 뒤 다시 시도해 주세요.'; }
-    if (status === 404) { return '이 모델을 사용할 수 없어요(404). 다른 모델로 다시 시도해 주세요.'; }
-    if (status >= 500) { return 'Gemini 서버가 잠시 불안정해요. 잠시 뒤 다시 시도해 주세요.'; }
-    return 'Gemini 요청 실패 (HTTP ' + status + ') ' + b.slice(0, 140);
+    if (status === 403) { return 'Gemini API 사용 권한이 없어요 (HTTP 403). 키 상태·프로젝트 빌링을 확인해 주세요.' + tail; }
+    if (status === 429) { return 'Gemini 무료 사용량을 잠시 넘었어요 (HTTP 429). 잠시 뒤 다시 시도해 주세요.' + tail; }
+    if (status === 404) { return '이 모델을 사용할 수 없어요 (HTTP 404). 설정에서 다른 모델을 골라 다시 시도해 주세요.' + tail; }
+    if (status >= 500) { return 'Gemini 서버가 잠시 불안정해요 (HTTP ' + status + '). 잠시 뒤 다시 시도해 주세요.' + tail; }
+    return 'Gemini 요청 실패 (HTTP ' + status + ')' + (tail || ' ' + b.slice(0, 140));
   }
 
-  async function geminiExtract(imageDataUrl, apiKey) {
+  /* ---------------- Gemini 엔드포인트 · 인증 ----------------
+     AI Studio 키(AIza…)와 Vertex AI Express 키(AQ…)를 모두 지원한다.
+     브라우저 CORS 프리플라이트를 피하려고 ?key= 쿼리를 먼저 쓰고,
+     인증 오류가 나오면 같은 엔드포인트에 x-goog-api-key 헤더로 한 번 더 시도한다. */
+  var GEMINI_ENDPOINTS = {
+    studio: { id: 'studio', label: 'AI Studio', base: 'https://generativelanguage.googleapis.com/v1beta' },
+    vertex: { id: 'vertex', label: 'Vertex AI Express', base: 'https://aiplatform.googleapis.com/v1beta1/publishers/google' }
+  };
+
+  function isAqKey(key) { return /^aq\./i.test(trimStr(key)); }
+
+  function geminiEndpointList(key) {
+    var list = [GEMINI_ENDPOINTS.studio];
+    if (isAqKey(key)) { list.push(GEMINI_ENDPOINTS.vertex); }
+    return list;
+  }
+
+  function authRelated(status, txt) {
+    if (status === 401 || status === 403) { return true; }
+    if (status === 400) {
+      return /API[_ ]?KEY|api key|SERVICE_DISABLED|has not been used|PERMISSION_DENIED|blocked|FAILED_PRECONDITION/i.test(String(txt || ''));
+    }
+    return false;
+  }
+
+  /* 한 모델로 generateContent 호출 (엔드포인트 · 인증 폴백 포함)
+     반환: { ok, api, apiLabel, auth, status, text, attempts } */
+  async function geminiCall(model, key, body) {
+    var endpoints = geminiEndpointList(key);
+    var attempts = [];
+    var last = null;
+    var networkOnly = true;
+
+    for (var e = 0; e < endpoints.length; e++) {
+      var ep = endpoints[e];
+      var auths = ['query', 'header'];
+      for (var a = 0; a < auths.length; a++) {
+        var url = ep.base + '/models/' + encodeURIComponent(model) + ':generateContent' +
+          (auths[a] === 'query' ? '?key=' + encodeURIComponent(key) : '');
+        var headers = { 'Content-Type': 'application/json' };
+        if (auths[a] === 'header') { headers['x-goog-api-key'] = key; }
+
+        var res = null, txt = '';
+        try {
+          res = await fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body) });
+        } catch (netErr) {
+          attempts.push({ api: ep.id, auth: auths[a], status: 0, text: '' });
+          continue;
+        }
+        networkOnly = false;
+        try { txt = await res.text(); } catch (e2) { txt = ''; }
+
+        if (res.ok) {
+          attempts.push({ api: ep.id, auth: auths[a], status: res.status, text: '' });
+          return { ok: true, api: ep.id, apiLabel: ep.label, auth: auths[a], status: res.status, text: txt, attempts: attempts };
+        }
+
+        attempts.push({ api: ep.id, auth: auths[a], status: res.status, text: txt.slice(0, 300) });
+        last = { status: res.status, text: txt };
+
+        // 인증 문제면 같은 엔드포인트의 헤더 방식도 시도하고, 그 밖의 오류면 다음 엔드포인트로 넘긴다
+        if (auths[a] === 'query' && authRelated(res.status, txt)) { continue; }
+        break;
+      }
+      // 429 · 5xx 는 엔드포인트를 바꿔도 같으니 여기서 멈춘다
+      if (last && (last.status === 429 || last.status >= 500)) { break; }
+    }
+
+    return {
+      ok: false,
+      api: '', apiLabel: '',
+      auth: '',
+      status: last ? last.status : 0,
+      text: last ? last.text : '',
+      attempts: attempts,
+      networkOnly: networkOnly && !last
+    };
+  }
+
+  /* 'Gemini 연결 테스트': 고른 모델로 가벼운 generateContent 1회 호출 */
+  async function geminiTest(apiKey, preferredModel) {
+    var key = cleanApiKey(apiKey);
+    var model = normalizeModel(preferredModel);
+    if (!key) {
+      return {
+        ok: false, model: model, status: 0, reason: '', message: 'API 키가 비어 있어요.',
+        hint: '설정에서 AIza… 또는 AQ…. 로 시작하는 키를 먼저 저장해 주세요.', attempts: []
+      };
+    }
+    var body = {
+      contents: [{ role: 'user', parts: [{ text: 'ok' }] }],
+      generationConfig: { temperature: 0, maxOutputTokens: 32 }
+    };
+    if (!/-pro/i.test(model)) {
+      body.generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
+
+    var r = await geminiCall(model, key, body);
+    if (r.ok) {
+      return {
+        ok: true, model: model, status: r.status, api: r.api, apiLabel: r.apiLabel, auth: r.auth,
+        reason: '', message: '', attempts: r.attempts
+      };
+    }
+    if (!r.status) {
+      return {
+        ok: false, model: model, status: 0, reason: 'NETWORK',
+        message: 'Gemini에 연결하지 못했어요 (네트워크 오류).',
+        hint: '인터넷 연결을 확인한 뒤 다시 시도해 주세요.', attempts: r.attempts
+      };
+    }
+    var info = apiErrorInfo(r.status, r.text);
+    return {
+      ok: false, model: model, status: r.status,
+      reason: info.reason, message: info.message,
+      hint: explainApiError(info) || (isAqKey(key) ? 'AQ. 키는 Vertex AI Express로도 시도했어요. 프로젝트의 API 사용 설정·결제 상태를 확인해 주세요.' : ''),
+      attempts: r.attempts
+    };
+  }
+
+  async function geminiExtract(imageDataUrl, apiKey, preferredModel) {
     if (!imageDataUrl) { throw new Error('영수증 사진을 먼저 올려 주세요.'); }
-    if (!apiKey) { throw new Error('Gemini API 키가 없어요. 설정에서 키를 저장하거나 OCR로 시도해 주세요.'); }
+    var apiKeyClean = cleanApiKey(apiKey);
+    if (!apiKeyClean) { throw new Error('Gemini API 키가 없어요. 설정에서 키를 저장하거나 OCR로 시도해 주세요.'); }
+    apiKey = apiKeyClean;
 
     var comma = imageDataUrl.indexOf(',');
     if (comma < 0) { throw new Error('이미지를 읽지 못했어요. 다른 사진으로 시도해 주세요.'); }
@@ -337,42 +574,36 @@
     var mimeMatch = head.match(/data:([^;]+)/);
     var mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
+    // role 은 Vertex AI Express 에서 필수, AI Studio 도 허용한다
     var body = {
       contents: [{
+        role: 'user',
         parts: [
           { text: GEMINI_PROMPT },
-          { inline_data: { mime_type: mime, data: b64 } }
+          { inlineData: { mimeType: mime, data: b64 } }
         ]
       }],
       generationConfig: { temperature: 0.1, maxOutputTokens: 3000, responseMimeType: 'application/json' }
     };
 
-    var models = geminiModels();
+    var models = geminiModels(preferredModel);
     var lastErr = null;
 
     for (var i = 0; i < models.length; i++) {
-      var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + models[i] +
-        ':generateContent?key=' + encodeURIComponent(apiKey);
-      var res;
-      try {
-        res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
-        });
-      } catch (netErr) {
-        throw new Error('Gemini에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.');
-      }
-      if (!res.ok) {
-        var txt = '';
-        try { txt = await res.text(); } catch (e2) { txt = ''; }
-        if (res.status === 400 || res.status === 404) {
-          lastErr = new Error(friendlyHttpError(res.status, txt));
+      var r = await geminiCall(models[i], apiKey, body);
+      if (!r.ok) {
+        if (!r.status) {
+          throw new Error('Gemini에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.');
+        }
+        var emsg = friendlyHttpError(r.status, r.text) + (r.apiLabel ? ' · ' + r.apiLabel : '');
+        if (r.status === 400 || r.status === 404) {
+          lastErr = new Error(emsg);
           continue;
         }
-        throw new Error(friendlyHttpError(res.status, txt));
+        throw new Error(emsg);
       }
-      var data = await res.json();
+      var data = null;
+      try { data = JSON.parse(r.text); } catch (e3) { data = null; }
       var cand = data && data.candidates && data.candidates[0];
       var parts = cand && cand.content && cand.content.parts ? cand.content.parts : [];
       var out = '';
@@ -640,6 +871,9 @@
 
   global.FU = {
     pad2: pad2,
+    cleanApiKey: cleanApiKey,
+    b64urlEncode: b64urlEncode,
+    b64urlDecode: b64urlDecode,
     todayStr: todayStr,
     addDaysStr: addDaysStr,
     parseDate: parseDate,
@@ -661,6 +895,12 @@
     foodByName: foodByName,
     parseReceiptText: parseReceiptText,
     extractJson: extractJson,
+    GEMINI_MODELS: GEMINI_MODELS,
+    geminiModelIds: geminiModelIds,
+    normalizeModel: normalizeModel,
+    geminiModels: geminiModels,
+    isAqKey: isAqKey,
+    geminiTest: geminiTest,
     geminiExtract: geminiExtract,
     ocrImage: ocrImage,
     fileToDataUrl: fileToDataUrl,
