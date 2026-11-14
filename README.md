@@ -11,10 +11,14 @@
 - **정렬·검색**: 유통기한 임박순 / 최근 등록순 / 이름순, 이름·메모 검색
 - **두 가지 등록 방식**
   - 직접 입력: 자주 쓰는 식재료 원터치 칩, 오늘/+3/+7/+14/+30일 빠른 날짜 버튼
-  - 영수증 인식: 사진 촬영·업로드 → Gemini(`gemini-2.5-flash` → `gemini-2.0-flash` 자동 재시도)로 품목·수량·보관함·유통기한 추출 → 체크박스 미리보기에서 수정 후 일괄 등록
+  - 영수증 인식: 사진 촬영·업로드 → Gemini로 품목·수량·보관함·유통기한 추출 → 체크박스 미리보기에서 수정 후 일괄 등록
+    - 모델 선택: `gemini-2.5-flash`(기본) · `gemini-2.5-pro` · `gemini-2.0-flash`
+    - `Gemini 연결 테스트` 버튼으로 선택한 모델에 가벼운 호출을 보내고 성공/HTTP 코드·사유를 화면에 표시
+    - 키는 저장할 때 줄바꿈·보이지 않는 공백을 제거. `AIza...`(AI Studio)와 `AQ....`(Vertex AI Express) 키 모두 지원하며, `AQ.` 키는 AI Studio 실패 시 Vertex AI Express 엔드포인트로 자동 재시도
   - API 키가 없어도 **텍스트 붙여넣기 파싱**과 **Tesseract.js OCR(한국어+영어)** 로 등록 가능
 - **장보기 목록**: 다 쓴 재료를 자동으로 담기(수량 0 → 확인), 체크 후 원터치 입고, 체크 항목 일괄 입고
 - **가족 공유**: Supabase REST + 8초 폴링으로 두 폰 동기화. 설정이 없으면 이 폰(localStorage)에만 저장
+- **설정 공유 링크**: 설정 → 가족 공유의 `🔗 이 설정 그대로 공유 링크 만들기` — Supabase URL·anon key·공유 코드·Gemini 키·모델을 Base64URL로 담은 `#setup=...` 링크를 복사. 가족 폰에서 열면 설정이 자동 적용되고 바로 동기화를 시도한 뒤 주소창의 해시는 지워진다.
 - **오프라인**: 서비스 워커가 앱 화면을 캐시, 마지막 데이터로 열림
 - **백업**: JSON 내보내기/가져오기
 
@@ -61,6 +65,7 @@ GitHub Pages에 올리면 `https://<계정>.github.io/<저장소>/` 로 가족�
 ## 영수증 인식
 
 - **Gemini 사용**: [aistudio.google.com/apikey](https://aistudio.google.com/apikey) 에서 무료 키 발급 → 앱 설정에 저장. 사진은 Google API로만 전송됩니다. 키는 이 기기 localStorage에만 저장돼요.
+- **키 종류**: `AIza...`(AI Studio)와 `AQ....`(Vertex AI Express) 키를 모두 지원합니다. `AQ.` 키는 AI Studio(`generativelanguage.googleapis.com`)를 먼저 호출하고, 401·403·키/서비스 관련 400이 나오면 Vertex AI Express(`aiplatform.googleapis.com/v1beta1/publishers/google`)로 자동 재시도합니다. `contents`에는 `role: 'user'`를 넣습니다.
 - **키 없이**: `글자만 추출(OCR)` 은 Tesseract.js CDN을 처음 한 번 내려받아 한국어+영어를 읽습니다(인터넷 필요, 첫 실행 30초 정도). 또는 영수증 텍스트를 붙여넣고 `품목 찾기`.
 - 인식 결과는 이름·수량·단위·보관함·유통기한(일)을 고칠 수 있고, 체크한 항목만 등록됩니다.
 

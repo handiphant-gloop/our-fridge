@@ -343,6 +343,23 @@ input:focus, select:focus, textarea:focus {
 .tips { margin: 10px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--muted); line-height: 1.65; }
 .version { font-size: 11.5px; color: var(--muted); margin-top: 14px; }
 
+#geminiModel { width: 100%; padding: 11px 12px; border: 1px solid var(--line); background: var(--card-2); border-radius: 11px; }
+.test-result {
+  margin-top: 9px; font-size: 12.5px; line-height: 1.6; color: var(--text-soft);
+  white-space: pre-line; word-break: break-word;
+  background: var(--card-2); border-radius: 10px; padding: 9px 11px;
+}
+.test-result.ok { color: var(--primary-dark); font-weight: 700; }
+.test-result.err { color: var(--danger); }
+.test-result.warn { color: var(--warn); }
+.setup-box { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
+.setup-box .hint { margin-top: 7px; }
+.setup-box #setupLinkInput {
+  width: 100%; margin-top: 9px; padding: 10px 11px; border: 1px solid var(--line);
+  background: var(--card-2); border-radius: 10px; font-size: 11.5px; line-height: 1.4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text-soft);
+}
+
 /* ---------- shopping list ---------- */
 .shop-item {
   display: flex; align-items: center; gap: 9px;
